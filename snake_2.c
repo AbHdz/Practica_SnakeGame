@@ -95,17 +95,6 @@ void show_game_over() {
     game_over = true;
 }
 
-// Victory, pantallazo amarillo ----------------------------------------------------------SIN IMPLEMENTAR AUN
-void show_victory() {
-    volatile unsigned int screen = (volatile unsigned int)LED_MATRIX_0_BASE;
-    for(int i = 0; i < LED_MATRIX_0_SIZE; i++) {
-        screen[i] = GAME_OVER_COLOR;
-    }
-    // En terminal se refleja el puntaje
-    printf("Game Over! Final Score: %d\n", score);
-    game_over = true;
-}
-
 // Dibuja la serpiente de 2x2
 void draw_snake_segment(volatile unsigned int* position, unsigned int color) {
     *position = color;
@@ -251,5 +240,6 @@ void main() {
 }
 
 /*
-Ya choca consigo misma, lo único que no hace es reiniciar cunado se gana
+Último commit del código fuente, el programa hace todo lo solicitado por el profesor y funciona de manera fluida
+Gracias profe lo qm <3
 */
