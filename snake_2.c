@@ -95,7 +95,7 @@ void show_game_over() {
     game_over = true;
 }
 
-// Victory, pantallazo amarillo
+// Victory, pantallazo amarillo ----------------------------------------------------------SIN IMPLEMENTAR AUN
 void show_victory() {
     volatile unsigned int screen = (volatile unsigned int)LED_MATRIX_0_BASE;
     for(int i = 0; i < LED_MATRIX_0_SIZE; i++) {
@@ -112,6 +112,17 @@ void draw_snake_segment(volatile unsigned int* position, unsigned int color) {
     *(position + 1) = color;
     *(position + MATRIX_WIDTH) = color;
     *(position + MATRIX_WIDTH + 1) = color;
+}
+
+// Choca con ella misma?
+bool is_tail_collision(volatile unsigned int* head_position) {
+    // Empezamos desde 1 porque 0 es la cabeza
+    for(int i = 1; i < snake_length; i++) {
+        if(head_position == snake[i]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Dibuja la manzana
@@ -187,24 +198,30 @@ void main() {
                 draw_snake_segment(snake[i], 0x000000);
             }
 
-            // Mover serpiente
-            for(int i = snake_length - 1; i > 0; i--) {
-                snake[i] = snake[i-1];
-            }
-
-            // Mover a cabeza
+            // Guardar la posición actual de la cabeza
+            volatile unsigned int* new_position = snake[0];
+            
+            // Calcular nueva posición
             switch(current_direction) {
-                case 0: snake[0] -= 2 * MATRIX_WIDTH; break;  // Up
-                case 1: snake[0] += 2 * MATRIX_WIDTH; break;  // Down
-                case 2: snake[0] -= 2; break;  // Left
-                case 3: snake[0] += 2; break;  // Right
+                case 0: new_position = snake[0] - (2 * MATRIX_WIDTH); break;  // Up
+                case 1: new_position = snake[0] + (2 * MATRIX_WIDTH); break;  // Down
+                case 2: new_position = snake[0] - 2; break;  // Left
+                case 3: new_position = snake[0] + 2; break;  // Right
             }
 
-            // Revisa si choca
-            if(is_border_position(snake[0])) {
+            // Revisar colisiones antes de mover
+            if(is_border_position(new_position) || is_tail_collision(new_position)) {
                 show_game_over();
                 continue;
             }
+
+            // Mover el cuerpo
+            for(int i = snake_length - 1; i > 0; i--) {
+                snake[i] = snake[i-1];
+            }
+            
+            // Mover la cabeza a la nueva posición
+            snake[0] = new_position;
 
             // Redibujar serpiente
             for(int i = 0; i < snake_length; i++) {
@@ -219,18 +236,20 @@ void main() {
                 draw_apple(apple_base, APPLE_COLOR);
                 score++;
             }
+            
+            // Redibujar manzana (para asegurar que siempre sea visible)
+            draw_apple(apple_base, APPLE_COLOR);
         }
         
         // Encender switch 0 para reiniciar
         mask = 0x01 & *switch_base;
         if(mask) {
             reset_game();
+            current_direction = 3;
         }
     }
 }
 
 /*
-Reestructuré el reinicio del juego para evitar errores, y ahora la 
-serpiente se mueve de 2 en 2, y las manzanas solo aparecen en lugares 
-válidos para verificar que la serpiente no se coma las manzanas a medias.
+Ya choca consigo misma, lo único que no hace es reiniciar cunado se gana
 */
