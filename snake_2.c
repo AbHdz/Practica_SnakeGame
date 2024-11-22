@@ -128,10 +128,18 @@ void main() {
         }
 
         // D-pad
-        if(*d_pad_up) current_direction = 0;
-        else if(*d_pad_do) current_direction = 1;
-        else if(*d_pad_le) current_direction = 2;
-        else if(*d_pad_ri) current_direction = 3;
+        if(*d_pad_up && current_direction != 1) {
+            current_direction = 0;
+        }
+        else if(*d_pad_do && current_direction != 0) {
+            current_direction = 1;
+        }
+        else if(*d_pad_le && current_direction != 3) {
+            current_direction = 2;
+        }
+        else if(*d_pad_ri && current_direction != 2) {
+            current_direction = 3;
+        }
         
         move_counter++;
         
@@ -155,6 +163,8 @@ void main() {
                 case 2: snake[0] -= 1; break;  // Left
                 case 3: snake[0] += 1; break;  // Right
             }
+
+            
             
             // Revisa si choca
             if(is_border_position(snake[0])) {
@@ -203,5 +213,5 @@ void main() {
 }
 
 /*
-Cambié la estructura de la generación de la serpiente para que creciera y eso terminó en varios cambios, pero ya crece al comer manzanas
-*/
+Los últimos cambios añaden que la serpiente no pueda girar hacia la dirección opuesta
+*
