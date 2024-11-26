@@ -3,20 +3,16 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define SW0 (0x01)
-#define SW1 (0x02)
-#define SW2 (0x04)
-#define SW3 (0x08)
-
 #define MATRIX_WIDTH LED_MATRIX_0_WIDTH
 #define MATRIX_HEIGHT LED_MATRIX_0_WIDTH 
 
 #define SNAKE_COLOR 0xFF0000    // Rojo
 #define APPLE_COLOR 0x39FF14    // Verde
-#define BORDER_COLOR 0x40E0D0   // Turquesa
+#define BORDER_COLOR 0x40E0D0   // Azul
 #define GAME_OVER_COLOR 0x800080 // Morado
+#define VICTORY_COLOR 0xCCFF00 // Morado
 
-// Variables globales
+// Global variables
 volatile unsigned int * led_base = (int*) LED_MATRIX_0_BASE;
 volatile unsigned int * d_pad_up = (int*) D_PAD_0_UP;
 volatile unsigned int * d_pad_do = (int*) D_PAD_0_DOWN;
@@ -24,14 +20,42 @@ volatile unsigned int * d_pad_le = (int*) D_PAD_0_LEFT;
 volatile unsigned int * d_pad_ri = (int*) D_PAD_0_RIGHT;
 volatile unsigned int * switch_base = (int*) SWITCHES_0_BASE;
 
+// Snake array
+volatile unsigned int * snake[100];
+int snake_length = 0;
 bool game_over = false;
 int score = 0;
 
-// Posición random de la manzana
+volatile unsigned int* apple_base;
+int apple_counter = 42;
+
 volatile unsigned int* generate_valid_apple_position(int counter) {    
-    int x = rand() % (MATRIX_WIDTH - 4) + 2;
-    int y = rand() % (MATRIX_HEIGHT - 4) + 2;
-    return (volatile unsigned int*)LED_MATRIX_0_BASE + (y * MATRIX_WIDTH + x);
+    volatile unsigned int* proposed_position;
+    bool valid_position;
+    do {
+        valid_position = true;
+        // Generar la posición random en cualquier celda par de la matriz
+        int x = 2 * (rand() % ((MATRIX_WIDTH - 2)/2)) + 1;
+        int y = 2 * (rand() % ((MATRIX_HEIGHT - 2)/2)) + 1;
+        proposed_position = (volatile unsigned int*)LED_MATRIX_0_BASE + (y * MATRIX_WIDTH + x);
+        
+        // Que no aparezca donde está la serpiente
+        for(int i = 0; i < snake_length; i++) {
+            if(proposed_position == snake[i] || 
+               proposed_position + 1 == snake[i] || 
+               proposed_position + MATRIX_WIDTH == snake[i] || 
+               proposed_position + MATRIX_WIDTH + 1 == snake[i]) {
+                valid_position = false;
+                break;
+            }
+        }
+        // Además revisar que solo aparezca en negro
+        if(valid_position) {
+            valid_position = (*proposed_position == 0x000000);
+        }
+        
+    } while(!valid_position);
+    return proposed_position;
 }
 
 bool is_border_position(volatile unsigned int* position) {
@@ -44,150 +68,173 @@ bool is_border_position(volatile unsigned int* position) {
 
 // Bordes azules
 void draw_border() {
-    volatile unsigned int current = (volatile unsigned int)LED_MATRIX_0_BASE;
-    // Borde superior
+    volatile unsigned int *current = (volatile unsigned int*)LED_MATRIX_0_BASE;
+    // Superior
     for(int i = 0; i < MATRIX_WIDTH; i++) {
         current[i] = BORDER_COLOR;
     }
-    // Bordes laterales
+    // Laterales
     for(int i = 0; i < MATRIX_HEIGHT; i++) {
-        current[i * MATRIX_WIDTH] = BORDER_COLOR;  // Izquierdo
-        current[i * MATRIX_WIDTH + (MATRIX_WIDTH-1)] = BORDER_COLOR;  // Derecho
+        current[i * MATRIX_WIDTH] = BORDER_COLOR;  // Left
+        current[i * MATRIX_WIDTH + (MATRIX_WIDTH-1)] = BORDER_COLOR;  // Right
     }
-    // Borde inferior
+    // Inferior
     for(int j = 0; j < MATRIX_WIDTH; j++) {
         current[(MATRIX_HEIGHT-1) * MATRIX_WIDTH + j] = BORDER_COLOR;
     }
 }
 
-// Pantalla morada y score final
+// Game over, pantallazo morado
 void show_game_over() {
-    volatile unsigned int screen = (volatile unsigned int)LED_MATRIX_0_BASE;
+    volatile unsigned int *screen = (volatile unsigned int*)LED_MATRIX_0_BASE;
     for(int i = 0; i < LED_MATRIX_0_SIZE; i++) {
         screen[i] = GAME_OVER_COLOR;
     }
+    // En terminal se refleja el puntaje
     printf("Game Over! Final Score: %d\n", score);
     game_over = true;
 }
 
-// Dibujar la serpiente
-void snake(volatile unsigned int * position, unsigned int color, int length) {
-    if (is_border_position(position)) {
-        show_game_over();
-        return;
-    }
-    
-    volatile unsigned int * head = position;
-    volatile unsigned int * tail = position;
-
-    *position = color;
-    *(position + 1) = color;
-    *(position + MATRIX_WIDTH) = color;
-    *(position + MATRIX_WIDTH + 1) = color;
-
-    for (int i = 0; i < length - 1; i++) {
-        *(tail - i * MATRIX_WIDTH - i) = color;
-        *(tail - (i + 1) * MATRIX_WIDTH - (i + 1)) = 0x000000;
-        tail -= MATRIX_WIDTH + 1;
-    }
-}
-
-void apple(volatile unsigned int * position, unsigned int color) {
+// Dibuja la serpiente de 2x2
+void draw_snake_segment(volatile unsigned int* position, unsigned int color) {
     *position = color;
     *(position + 1) = color;
     *(position + MATRIX_WIDTH) = color;
     *(position + MATRIX_WIDTH + 1) = color;
 }
 
+// Choca con ella misma?
+bool is_tail_collision(volatile unsigned int* head_position) {
+    // Empezamos desde 1 porque 0 es la cabeza
+    for(int i = 1; i < snake_length; i++) {
+        if(head_position == snake[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Dibuja la manzana
+void draw_apple(volatile unsigned int * position, unsigned int color) {
+    draw_snake_segment(position, color);
+}
+
+// Todo negro
 void clear_screen() {
     for(int i = 0; i < LED_MATRIX_0_SIZE; i++) {
-        ((volatile unsigned int)LED_MATRIX_0_BASE + i) = 0x000000;
+        *((volatile unsigned int*)LED_MATRIX_0_BASE + i) = 0x000000;
     }
+}
+
+//Cada que inicia el programa...
+void reset_game() {
+    clear_screen();
+    draw_border();
+    
+    // Serpiente
+    snake[0] = (int*)LED_MATRIX_0_BASE + MATRIX_WIDTH + 1;
+    snake_length = 1;
+    draw_snake_segment(snake[0], SNAKE_COLOR);
+
+    // Variables
+    game_over = false;
+    score = 0;
+    apple_counter = 42;
+
+    // Manzana
+    apple_base = generate_valid_apple_position(apple_counter);
+    draw_apple(apple_base, APPLE_COLOR);
 }
 
 void main() {
     unsigned int mask = 0;
-    volatile unsigned int * tmp;
     int current_direction = 3;
     int move_counter = 0;
-    int length = 0;
-    int apple_counter = 42;
-    
-    clear_screen();
-    draw_border();
-    
-    led_base = (int*)LED_MATRIX_0_BASE + MATRIX_WIDTH + 2;
-    snake(led_base, SNAKE_COLOR, length);
 
-    volatile unsigned int * apple_base = generate_valid_apple_position(apple_counter);
-    apple(apple_base, APPLE_COLOR);
+    // Iniciar
+    reset_game();
     
     while(1) {
         if(game_over) {
             mask = 0x01 & *switch_base;
             if(mask) {
-                game_over = false;
-                clear_screen();
-                draw_border();
-                led_base = (int*)LED_MATRIX_0_BASE + MATRIX_WIDTH + 2;
-                apple_counter = 42;
-                apple_base = generate_valid_apple_position(apple_counter);
-                length = 0;
-                current_direction = 3;
-                move_counter = 0;
-                snake(led_base, SNAKE_COLOR, length);
-                apple(apple_base, APPLE_COLOR);
+                reset_game();
             }
             continue;
         }
 
-        if(*d_pad_up) current_direction = 0;
-        else if(*d_pad_do) current_direction = 1;
-        else if(*d_pad_le) current_direction = 2;
-        else if(*d_pad_ri) current_direction = 3;
+        // D-pad
+        if(*d_pad_up && current_direction != 1) {
+            current_direction = 0;
+        }
+        else if(*d_pad_do && current_direction != 0) {
+            current_direction = 1;
+        }
+        else if(*d_pad_le && current_direction != 3) {
+            current_direction = 2;
+        }
+        else if(*d_pad_ri && current_direction != 2) {
+            current_direction = 3;
+        }
         
         move_counter++;
         
-        if(move_counter >= 800) {
+        if(move_counter >= 600) {
             move_counter = 0;
             
-            snake(led_base, 0x000000, length);
+            // Clear
+            for(int i = 0; i < snake_length; i++) {
+                draw_snake_segment(snake[i], 0x000000);
+            }
 
+            // Guardar la posición actual de la cabeza
+            volatile unsigned int* new_position = snake[0];
+            
+            // Calcular nueva posición
             switch(current_direction) {
-                case 0: led_base -= MATRIX_WIDTH; break;
-                case 1: led_base += MATRIX_WIDTH; break;
-                case 2: led_base -= 1; break;
-                case 3: led_base += 1; break;
+                case 0: new_position = snake[0] - (2 * MATRIX_WIDTH); break;  // Up
+                case 1: new_position = snake[0] + (2 * MATRIX_WIDTH); break;  // Down
+                case 2: new_position = snake[0] - 2; break;  // Left
+                case 3: new_position = snake[0] + 2; break;  // Right
+            }
+
+            // Revisar colisiones antes de mover
+            if(is_border_position(new_position) || is_tail_collision(new_position)) {
+                show_game_over();
+                continue;
+            }
+
+            // Mover el cuerpo
+            for(int i = snake_length - 1; i > 0; i--) {
+                snake[i] = snake[i-1];
             }
             
-            snake(led_base, SNAKE_COLOR, length);
+            // Mover la cabeza a la nueva posición
+            snake[0] = new_position;
+
+            // Redibujar serpiente
+            for(int i = 0; i < snake_length; i++) {
+                draw_snake_segment(snake[i], SNAKE_COLOR);
+            }
             
-            if(led_base == apple_base) {
-                length += 2;
+            // Revisa si come manzana
+            if(snake[0] == apple_base) {
+                snake_length += 1;
                 apple_counter += 13;
                 apple_base = generate_valid_apple_position(apple_counter);
-                apple(apple_base, APPLE_COLOR);
-                score ++;
+                draw_apple(apple_base, APPLE_COLOR);
+                score++;
             }
+            
+            // Redibujar manzana (para asegurar que siempre sea visible)
+            draw_apple(apple_base, APPLE_COLOR);
         }
         
+        // Encender switch 0 para reiniciar
         mask = 0x01 & *switch_base;
         if(mask) {
-            game_over = false;
-            clear_screen();
-            draw_border();
-            led_base = (int*)LED_MATRIX_0_BASE + MATRIX_WIDTH + 2;
-            apple_counter = 42;//solicitar explicación de que hace el 42
-            apple_base = generate_valid_apple_position(apple_counter);
-            length = 0;
+            reset_game();
             current_direction = 3;
-            move_counter = 0;
-            snake(led_base, SNAKE_COLOR, length);
-            apple(apple_base, APPLE_COLOR);
         }
     }
 }
-
-/*
-No tiene muchos cambios pero la manzana ya se genera de manera random y se imprime el score al perder
-*/
